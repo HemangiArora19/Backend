@@ -4,7 +4,7 @@ const express = require("express");
 const cors = require("cors");
 const app = express();
 const jwt = require("jsonwebtoken");
-
+const cloudinary = require('./config/cloudinary');
 const mongoose = require("mongoose");
 const User = require("./models/user.models");
 const { authenticateToken } = require("./utilities");
@@ -13,11 +13,11 @@ const fs= require("fs")
 const path= require("path")
 
 const upload= require("./multer");
-const { error } = require("console");
+const { error, log } = require("console");
 // Middleware
 app.use(express.json());
 app.use(cors({ origin: "*" }));
-
+const streamifier = require("streamifier");
 
 
 
@@ -249,43 +249,106 @@ app.delete("/delete-story/:id", authenticateToken, async (req, res) => {
 
 
 //image
+// app.post("/image-upload", upload.single("image"), async (req, res) => {
+//   try {
+//     if (!req.file) {
+//       return res.status(400).json({ error: true, message: "No image uploaded" });
+//     }
+//     const imageUrl = `http://localhost:8000/uploads/${req.file.filename}`;
+//     res.status(200).json({ success: true, imageUrl });
+//   } catch (error) {
+//     res.status(500).json({ error: true, message: error.message });
+//   }
+// });
+
+
+// adjust path if needed
+
+
 app.post("/image-upload", upload.single("image"), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: true, message: "No image uploaded" });
     }
-    const imageUrl = `http://localhost:8000/uploads/${req.file.filename}`;
-    res.status(200).json({ success: true, imageUrl });
+
+    const result = await cloudinary.uploader.upload(req.file.path, {
+      folder: 'travel' // optional Cloudinary folder
+    });
+
+    // Delete the local file after upload
+    fs.unlinkSync(req.file.path);
+
+    res.status(200).json({
+      success: true,
+      imageUrl: result.secure_url,
+      public_id: result.public_id, // You'll need this for deletion
+    });
   } catch (error) {
+    console.error("Upload error:", error);
     res.status(500).json({ error: true, message: error.message });
   }
 });
-//delete image
-app.delete("/delete-image", async (req, res) => {
-  const { imageUrl } = req.query;
 
-  // Check if the imageUrl query parameter is provided
-  if (!imageUrl) {
-    return res.status(400).json({ error: true, message: "imageUrl parameter is required" });
+
+
+
+
+
+
+
+
+//delete image
+// app.delete("/delete-image", async (req, res) => {
+//   const { imageUrl } = req.query;
+
+//   // Check if the imageUrl query parameter is provided
+//   if (!imageUrl) {
+//     return res.status(400).json({ error: true, message: "imageUrl parameter is required" });
+//   }
+
+//   try {
+//     const fileName = path.basename(imageUrl); // Extract the filename
+//     const filePath = path.join(__dirname, 'uploads', fileName); // Build the full path
+
+//     // Check if the file exists
+//     if (fs.existsSync(filePath)) {
+//       fs.unlinkSync(filePath); // Delete the file
+//       console.log("File deletion is done for image:", fileName);
+//       return res.status(200).json({ message: "Image deleted successfully" });
+//     } else {
+//       return res.status(404).json({ error: true, message: "Image not found" });
+//     }
+//   } catch (error) {
+//     console.error("Error deleting image:", error);
+//     return res.status(500).json({ error: true, message: error.message });
+//   }
+// });
+
+
+app.delete("/delete-image", async (req, res) => {
+  const { public_id } = req.params;
+
+  if (!public_id) {
+    return res.status(400).json({ error: true, message: "public_id is required in request body" });
   }
 
   try {
-    const fileName = path.basename(imageUrl); // Extract the filename
-    const filePath = path.join(__dirname, 'uploads', fileName); // Build the full path
+    const result = await cloudinary.uploader.destroy(public_id);
+    console.log(result);
+    
 
-    // Check if the file exists
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath); // Delete the file
-      console.log("File deletion is done for image:", fileName);
+    if (result.result === 'ok' || result.result === 'not_found') {
       return res.status(200).json({ message: "Image deleted successfully" });
     } else {
-      return res.status(404).json({ error: true, message: "Image not found" });
+      return res.status(400).json({ error: true, message: "Failed to delete image from Cloudinary" });
     }
   } catch (error) {
     console.error("Error deleting image:", error);
     return res.status(500).json({ error: true, message: error.message });
   }
 });
+
+
 //update edit issfavousite
 app.put("/update-is-favourite/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
